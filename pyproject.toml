@@ -58,7 +58,39 @@ dev = [
 [project.optional-dependencies]
 extra = [
     "datasets>=4.1.1",  # Appendix F, MMLU
-    "chainlit>=2.8.3; python_version < '3.14'",  # Appendix G, Chat UI
+    "chainlit>=2.8.3; python_full_version < '3.14'",  # Appendix G, Chat UI
+]
+# Opt-in accelerator selection for AMD GPUs (ROCm), using AMD's own wheel
+# index. uv cannot auto-detect which GPU vendor is installed, so this must
+# be requested explicitly via:
+#   uv sync --extra rocm
+# Requires Python < 3.14 (AMD's index doesn't yet publish a cp314 build of
+# the `rocm` SDK meta-package that resolves cleanly for uv's universal lock;
+# create the project venv with e.g. `uv venv --python 3.12` first).
+# torch/torchvision/torchaudio must be pinned together to the same ROCm
+# build. The "device-gfx1150" extra targets this repo's dev machine's GPU
+# (AMD Radeon 880M/890M, Ryzen AI APU). Run `python scripts/detect_rocm_gpu.py`
+# to detect your own GPU's gfx target and adjust the extra name accordingly
+# (or use "device-all" for a broader, larger multi-arch wheel).
+# See ch02/02_setup-tips/rocm-setup.md for the full setup/teardown guide.
+rocm = [
+    "torch[device-gfx1150]==2.13.0+rocm10.0.0 ; sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'",
+    "torchvision[device-gfx1150]==0.28.0+rocm10.0.0 ; sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'",
+    "torchaudio==2.11.0.2+rocm10.0.0 ; sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'",
+    # torch/torchvision transitively depend on these ROCm SDK packages, but
+    # `tool.uv.sources` only routes DIRECT dependencies to a custom index, so
+    # they must be listed here explicitly (pinned to the exact versions AMD
+    # publishes) to avoid uv silently falling back to PyPI for these names
+    # (e.g. an unrelated "rocm-bootstrap" package exists on PyPI itself).
+    "rocm[libraries,device-gfx1150]==10.0.0 ; sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'",
+    "rocm-bootstrap==0.1.0 ; sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'",
+    "rocm-sdk-core==10.0.0 ; sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'",
+    "rocm-sdk-libraries==10.0.0 ; sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'",
+    "rocm-sdk-device-gfx1150==10.0.0 ; sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'",
+    "triton==3.8.0+git4cff872c.rocm10.0.0 ; sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'",
+    "amd-torch-device-gfx1150==2.13.0+rocm10.0.0 ; sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'",
+    "amd-torch-device-gfx115x==2.13.0+rocm10.0.0 ; sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'",
+    "amd-torchvision-device-gfx1150==0.28.0+rocm10.0.0 ; sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'",
 ]
 
 [tool.ruff.lint]
@@ -73,17 +105,69 @@ include = ["reasoning_from_scratch", "reasoning_from_scratch.*"]
 
 [tool.uv]
 exclude-newer = "7 days"  # Requires a newer uv; run `uv self update` if this fails to parse
+# AMD's ROCm wheel index doesn't publish upload-date metadata, so uv can't
+# reliably apply the repo-wide `exclude-newer` cutoff to these packages;
+# exempt them explicitly instead. This list covers torch/torchvision/torchaudio
+# plus the transitive `rocm` SDK stack they pull in via the "device-gfx1150" extra.
+exclude-newer-package = { torch = false, torchvision = false, torchaudio = false, rocm = false, rocm-bootstrap = false, rocm-sdk-core = false, rocm-sdk-libraries = false, rocm-sdk-device-gfx1150 = false, triton = false, amd-torch-device-gfx1150 = false, amd-torch-device-gfx115x = false, amd-torchvision-device-gfx1150 = false }
 
 [tool.uv.sources]
 reasoning = { workspace = true }
 reasoning-from-scratch = { workspace = true }
 torch = [
     { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64'" },
+    { index = "pytorch-rocm-amd", marker = "sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'" },
+]
+torchvision = [
+    { index = "pytorch-rocm-amd", marker = "sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'" },
+]
+torchaudio = [
+    { index = "pytorch-rocm-amd", marker = "sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'" },
+]
+# The ROCm SDK stub (`rocm`) and its actual binary wheels (`rocm-bootstrap`,
+# `rocm-sdk-core`, `rocm-sdk-libraries`, `rocm-sdk-device-gfx1150`) are
+# published on a SEPARATE AMD index from torch/torchvision/torchaudio.
+rocm = [
+    { index = "pytorch-rocm-amd-core", marker = "sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'" },
+]
+rocm-bootstrap = [
+    { index = "pytorch-rocm-amd-core", marker = "sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'" },
+]
+rocm-sdk-core = [
+    { index = "pytorch-rocm-amd-core", marker = "sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'" },
+]
+rocm-sdk-libraries = [
+    { index = "pytorch-rocm-amd-core", marker = "sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'" },
+]
+rocm-sdk-device-gfx1150 = [
+    { index = "pytorch-rocm-amd-core", marker = "sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'" },
+]
+triton = [
+    { index = "pytorch-rocm-amd", marker = "sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'" },
+]
+amd-torch-device-gfx1150 = [
+    { index = "pytorch-rocm-amd", marker = "sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'" },
+]
+amd-torch-device-gfx115x = [
+    { index = "pytorch-rocm-amd", marker = "sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'" },
+]
+amd-torchvision-device-gfx1150 = [
+    { index = "pytorch-rocm-amd", marker = "sys_platform == 'linux' and platform_machine != 'aarch64' and python_full_version < '3.14'" },
 ]
 
 [[tool.uv.index]]
 name = "pytorch-cu130"
 url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm-amd"
+url = "https://stable.repo.amd.com/rocm/pytorch/whl-next/"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm-amd-core"
+url = "https://stable.repo.amd.com/rocm/core/whl-next/"
 explicit = true
 
 [tool.uv.workspace]

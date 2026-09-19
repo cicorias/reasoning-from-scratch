@@ -7,3 +7,4 @@
 
 - [python-instructions.md](python-instructions.md): optional Python setup recommendations and instructions
 - [gpu-instructions.md](gpu-instructions.md): recommendations for cloud compute resources
+- [rocm-setup.md](rocm-setup.md): using a local AMD GPU (ROCm) instead of NVIDIA/CUDA
